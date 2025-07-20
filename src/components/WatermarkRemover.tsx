@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Upload, Download, Wand2, Image as ImageIcon, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
@@ -19,8 +19,19 @@ export default function WatermarkRemover() {
   const [progress, setProgress] = useState(0)
   const [processedImage, setProcessedImage] = useState<ProcessedImage | null>(null)
   const [dragActive, setDragActive] = useState(false)
+  const [user, setUser] = useState<any>(null)
+  const [authLoading, setAuthLoading] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
+
+  // Check authentication status
+  useEffect(() => {
+    const unsubscribe = blink.auth.onAuthStateChanged((state) => {
+      setUser(state.user)
+      setAuthLoading(state.isLoading)
+    })
+    return unsubscribe
+  }, [])
 
   const handleFileSelect = (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -78,6 +89,16 @@ export default function WatermarkRemover() {
   const processImage = async () => {
     if (!selectedImage) return
 
+    // Check if user is authenticated
+    if (!user) {
+      toast({
+        title: 'Authentication required',
+        description: 'Please sign in to use the watermark removal feature',
+        variant: 'destructive'
+      })
+      return
+    }
+
     setIsProcessing(true)
     setProgress(0)
 
@@ -96,6 +117,7 @@ export default function WatermarkRemover() {
         { upsert: true }
       )
 
+      console.log('Image uploaded to:', publicUrl)
       setProgress(40)
 
       // Use AI to analyze and remove watermark
@@ -106,28 +128,26 @@ export default function WatermarkRemover() {
 
       setProgress(60)
 
-      // Generate a prompt for watermark removal
-      const analysisPrompt = `Analyze this image and remove any semi-transparent watermarks, logos, or text overlays while preserving the original image quality. Focus on:
-      1. Detecting semi-transparent overlays
-      2. Removing watermarks without damaging the underlying image
-      3. Maintaining original colors and details
-      4. Ensuring seamless blending where watermarks were removed
-      
-      Generate a clean, watermark-free version of this image with the highest possible quality.`
+      // Generate a more specific prompt for watermark removal
+      const analysisPrompt = `Remove all watermarks, logos, text overlays, and semi-transparent branding elements from this image. Create a clean version without any visible watermarks while maintaining the original image quality, colors, and details. Focus on completely eliminating any Getty Images watermarks, copyright notices, or other overlay text.`
 
-      const { data } = await blink.ai.modifyImage({
+      console.log('Starting AI processing with prompt:', analysisPrompt)
+
+      const result = await blink.ai.modifyImage({
         images: [publicUrl],
         prompt: analysisPrompt,
         quality: 'high',
-        n: 1
+        n: 1,
+        size: '1024x1024'
       })
 
+      console.log('AI processing result:', result)
       setProgress(90)
 
-      if (data && data[0]?.url) {
+      if (result && result.data && result.data[0]?.url) {
         setProcessedImage({
           original: publicUrl,
-          processed: data[0].url,
+          processed: result.data[0].url,
           filename: selectedImage.name.replace(/\.[^/.]+$/, '_watermark_removed.png')
         })
 
@@ -139,14 +159,16 @@ export default function WatermarkRemover() {
           variant: 'default'
         })
       } else {
-        throw new Error('Failed to process image')
+        console.error('Invalid AI response:', result)
+        throw new Error('AI processing returned invalid response')
       }
 
     } catch (error) {
       console.error('Processing error:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
       toast({
         title: 'Processing failed',
-        description: 'Failed to remove watermark. Please try again.',
+        description: `Error: ${errorMessage}. Please try again.`,
         variant: 'destructive'
       })
     } finally {
@@ -193,18 +215,69 @@ export default function WatermarkRemover() {
     }
   }
 
+  // Show loading state while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show sign-in prompt for unauthenticated users
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="max-w-md mx-auto">
+          <CardHeader className="text-center">
+            <div className="p-3 bg-primary/10 rounded-lg w-fit mx-auto mb-4">
+              <Wand2 className="h-8 w-8 text-primary" />
+            </div>
+            <CardTitle className="text-2xl">AI Watermark Remover</CardTitle>
+            <p className="text-muted-foreground">
+              Sign in to remove watermarks from your images using advanced AI technology
+            </p>
+          </CardHeader>
+          <CardContent>
+            <Button 
+              onClick={() => blink.auth.login()} 
+              className="w-full bg-primary hover:bg-primary/90"
+            >
+              Sign In to Continue
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b bg-card">
         <div className="max-w-6xl mx-auto px-4 py-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <Wand2 className="h-6 w-6 text-primary" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Wand2 className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-foreground">AI Watermark Remover</h1>
+                <p className="text-muted-foreground">Remove watermarks from images using advanced AI technology</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">AI Watermark Remover</h1>
-              <p className="text-muted-foreground">Remove watermarks from images using advanced AI technology</p>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Welcome, {user.email}</span>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => blink.auth.logout()}
+              >
+                Sign Out
+              </Button>
             </div>
           </div>
         </div>
