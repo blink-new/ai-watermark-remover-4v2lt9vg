@@ -91,6 +91,7 @@ export default function WatermarkRemover() {
 
     // Check if user is authenticated
     if (!user) {
+      console.error('User not authenticated:', user)
       toast({
         title: 'Authentication required',
         description: 'Please sign in to use the watermark removal feature',
@@ -98,6 +99,8 @@ export default function WatermarkRemover() {
       })
       return
     }
+
+    console.log('User authenticated:', { id: user.id, email: user.email })
 
     setIsProcessing(true)
     setProgress(0)
@@ -137,8 +140,7 @@ export default function WatermarkRemover() {
         images: [publicUrl],
         prompt: analysisPrompt,
         quality: 'high',
-        n: 1,
-        size: '1024x1024'
+        n: 1
       })
 
       console.log('AI processing result:', result)
@@ -165,7 +167,28 @@ export default function WatermarkRemover() {
 
     } catch (error) {
       console.error('Processing error:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      console.error('Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        type: typeof error,
+        error: error
+      })
+      
+      let errorMessage = 'Unknown error occurred'
+      if (error instanceof Error) {
+        errorMessage = error.message
+        // Check for specific error types
+        if (error.message.includes('401') || error.message.includes('unauthorized')) {
+          errorMessage = 'Authentication failed. Please sign out and sign in again.'
+        } else if (error.message.includes('403') || error.message.includes('forbidden')) {
+          errorMessage = 'Access denied. Please check your account permissions.'
+        } else if (error.message.includes('429') || error.message.includes('rate limit')) {
+          errorMessage = 'Rate limit exceeded. Please wait a moment and try again.'
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage = 'Network error. Please check your connection and try again.'
+        }
+      }
+      
       toast({
         title: 'Processing failed',
         description: `Error: ${errorMessage}. Please try again.`,
